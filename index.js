@@ -19,16 +19,22 @@ const wss = new WebSocket.Server({ server });
 wss.on("connection", (ws) => {
     console.log("New WebSocket connection");
 
+    // Send previous messages to the new client when they connect
+    ws.send(JSON.stringify({ type: "previousMessages", messages }));
+
     // Listen for messages from the client
     ws.on("message", (message) => {
         console.log(`Received: ${message}`);
         
-        // Broadcast the received message to all clients (except the sender)
+        // Broadcast the received message to all clients (including the sender)
         wss.clients.forEach((client) => {
-            if (client !== ws && client.readyState === WebSocket.OPEN) {
+            if (client.readyState === WebSocket.OPEN) {
                 client.send(message);
             }
         });
+
+        // Save the message to the messages array
+        messages.push({ user: "User", message: message });
     });
 
     // When the WebSocket connection is closed
