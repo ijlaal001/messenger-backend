@@ -1,96 +1,92 @@
-document.addEventListener("DOMContentLoaded", function() {
-    // Your existing JavaScript code goes here
-    
-    const backendURL = "https://messenger-backend-sh73.onrender.com";
+const express = require("express");
+const cors = require("cors");
+const WebSocket = require("ws");
 
-    // Register button event
-    document.getElementById("registerBtn").addEventListener("click", function() {
-        let username = document.getElementById("newUsername").value.trim();
-        let password = document.getElementById("newPassword").value.trim();
-        
-        fetch(`${backendURL}/register`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ username, password })
-        }).then(response => response.json())
-          .then(data => alert(data.message));
+const app = express();
+app.use(express.json());
+app.use(cors());
+
+const users = [{ username: "boss", password: "boss", isAdmin: true }];
+const messages = [];
+
+const server = app.listen(10000, () => {
+    console.log("Server running on port 10000");
+});
+
+// WebSocket server setup
+const wss = new WebSocket.Server({ server });
+
+wss.on("connection", (ws) => {
+    console.log("New WebSocket connection");
+
+    // Send previous messages to the new client when they connect
+    ws.send(JSON.stringify({ type: "previousMessages", messages }));
+
+    // Listen for messages from the client
+    ws.on("message", (message) => {
+        console.log(`Received: ${message}`);
+
+        // Save the message to the messages array
+        messages.push({ user: "User", message: message });
+
+        // Broadcast the received message to all clients (including the sender)
+        wss.clients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+                client.send(message);
+            }
+        });
     });
 
-    // Login button event
-    document.getElementById("loginBtn").addEventListener("click", function() {
-        let username = document.getElementById("username").value.trim();
-        let password = document.getElementById("password").value.trim();
-
-        fetch(`${backendURL}/login`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ username, password })
-        }).then(response => response.json())
-          .then(data => {
-              if (data.success) {
-                  sessionStorage.setItem("currentUser", username);
-                  document.getElementById("login").style.display = "none";
-                  document.getElementById("register").style.display = "none";
-                  document.getElementById("chat").style.display = "block";
-                  loadMessages();
-              } else {
-                  alert("Invalid username or password");
-              }
-          });
-    });
-
-    // Switch to Register page
-    document.getElementById("showRegister").addEventListener("click", function() {
-        document.getElementById("login").style.display = "none";
-        document.getElementById("register").style.display = "block";
-    });
-
-    // Switch to Login page
-    document.getElementById("showLogin").addEventListener("click", function() {
-        document.getElementById("register").style.display = "none";
-        document.getElementById("login").style.display = "block";
-    });
-
-    // Load chat messages
-    function loadMessages() {
-        fetch(`${backendURL}/messages`)
-            .then(response => response.json())
-            .then(messages => {
-                let chatbox = document.getElementById("chatbox");
-                chatbox.innerHTML = "";
-                messages.forEach(msg => {
-                    let messageElement = document.createElement("div");
-                    messageElement.className = msg.user === sessionStorage.getItem("currentUser") ? "message user" : "message other";
-                    messageElement.textContent = msg.user + ": " + msg.message;
-                    chatbox.appendChild(messageElement);
-                });
-                chatbox.scrollTop = chatbox.scrollHeight;
-            });
-    }
-
-    // Send a message
-    document.getElementById("send").addEventListener("click", function() {
-        let messageInput = document.getElementById("message");
-        let messageText = messageInput.value.trim();
-        let currentUser = sessionStorage.getItem("currentUser");
-
-        if (messageText !== "" && currentUser) {
-            fetch(`${backendURL}/send`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ user: currentUser, message: messageText })
-            }).then(response => response.json())
-              .then(() => {
-                  loadMessages();
-                  messageInput.value = "";
-              });
-        }
-    });
-
-    // Logout button event
-    document.getElementById("logout").addEventListener("click", function() {
-        sessionStorage.removeItem("currentUser");
-        document.getElementById("chat").style.display = "none";
-        document.getElementById("login").style.display = "block";
+    // When the WebSocket connection is closed
+    ws.on("close", () => {
+        console.log("WebSocket connection closed");
     });
 });
+
+app.post("/register", (req, res) => {
+    const { username, password } = req.body;
+    if (users.find((user) => user.username === username)) {
+        return res.json({ message: "Username already exists" });
+    }
+    users.push({ username, password, isAdmin: false });
+    res.json({ message: "User registered successfully" });
+});
+
+app.post("/login", (req, res) => {
+    const { username, password } = req.body;
+    const user = users.find((u) => u.username === username && u.password === password);
+    if (user) {
+        res.json({ success: true, isAdmin: user.isAdmin });
+    } else {
+        res.json({ success: false });
+    }
+});
+
+app.get("/messages", (req, res) => {
+    res.json(messages);
+});
+
+app.post("/send", (req, res) => {
+    const { user, message } = req.body;
+    messages.push({ user, message });
+    res.json({ success: true });
+});
+
+// Admin route to change username and password
+app.post("/admin/update-user", (req, res) => {
+    const { adminUser, adminPass, targetUser, newUsername, newPassword } = req.body;
+    const admin = users.find(
+        (u) => u.username === adminUser && u.password === adminPass && u.isAdmin
+    );
+    if (!admin) {
+        return res.json({ success: false, message: "Unauthorized" });
+    }
+    let user = users.find((u) => u.username === targetUser);
+    if (!user) {
+        return res.json({ success: false, message: "User not found" });
+    }
+    if (newUsername) user.username = newUsername;
+    if (newPassword) user.password = newPassword;
+    res.json({ success: true, message: "User updated successfully" });
+});
+
