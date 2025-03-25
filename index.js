@@ -5,7 +5,7 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-const users = [{ username: "admin", password: "admin123", isAdmin: true }];
+const users = [{ username: "boss", password: "boss", isAdmin: true }];
 const messages = [];
 
 app.post("/register", (req, res) => {
